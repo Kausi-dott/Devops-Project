@@ -1,0 +1,79 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = 'kausi0409/prod'
+    DOCKER_HUB_CREDS = 'docker-hub-creds'
+  }
+
+  stages {
+    stage('Clone Repo') {
+      steps {
+        git branch: 'prod',
+            url: 'https://github.com/kausi-dott/devops-build.git'
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t $IMAGE_NAME:latest .'
+      }
+    }
+
+    stage('Login to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+        }
+      }
+    }
+
+    stage('Push Image to Docker Hub') {
+      steps {
+        sh 'docker push $IMAGE_NAME:latest'
+      }
+    }
+
+    stage('Deploy Application') {
+      steps {
+        script {
+          // Stop old container if it exists
+          sh 'docker rm -f prod-app || true'
+
+          // Run new container on port 80
+          sh 'docker run -d -p 80:80 --name prod-app $IMAGE_NAME:latest'
+        }
+      }
+    }
+
+    stage('Health Check') {
+      steps {
+        script {
+          sleep 10 // Wait for app to start
+
+          def status = sh(
+            script: 'curl -s -o /dev/null -w "%{http_code}" http://localhost',
+            returnStdout: true
+          ).trim()
+
+          if (status != '200') {
+            mail to: 'your_email@example.com',
+                 subject: '❌ App Down After Deployment',
+                 body: """\
+The production application failed health check after deployment.
+
+HTTP Status: ${status}
+Container: prod-app
+Image: $IMAGE_NAME
+
+Please investigate immediately.
+"""
+            error("Health check failed with status ${status}")
+          } else {
+            echo "✅ App is healthy with HTTP ${status}"
+          }
+        }
+      }
+    }
+  }
+}

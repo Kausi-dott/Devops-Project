@@ -1,0 +1,79 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = 'kausi0409/dev'
+    DOCKER_HUB_CREDS = 'docker-hub-creds'
+  }
+
+  stages {
+    stage('Clone Repo') {
+      steps {
+        git branch: 'dev',
+            url: 'https://github.com/kausi-dott/devops-build.git'
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t $IMAGE_NAME:latest .'
+      }
+    }
+
+    stage('Login to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+        }
+      }
+    }
+
+    stage('Push Image to Docker Hub') {
+      steps {
+        sh 'docker push $IMAGE_NAME:latest'
+      }
+    }
+
+    stage('Deploy Application') {
+      steps {
+        script {
+          // Stop existing dev container if running
+          sh 'docker rm -f dev-app || true'
+
+          // Deploy the new dev container on port 80
+          sh 'docker run -d -p 80:80 --name dev-app $IMAGE_NAME:latest'
+        }
+      }
+    }
+
+    stage('Health Check') {
+      steps {
+        script {
+          sleep 10 // Wait for container to be ready
+
+          def status = sh(
+            script: 'curl -s -o /dev/null -w "%{http_code}" http://localhost',
+            returnStdout: true
+          ).trim()
+
+          if (status != '200') {
+            mail to: 'your_email@example.com',
+                 subject: '❌ Dev App Down After Deployment',
+                 body: """\
+The DEV application failed its health check after deployment.
+
+HTTP Status: ${status}
+Container: dev-app
+Image: $IMAGE_NAME
+
+Please review the deployment on your server.
+"""
+            error("Dev health check failed with status ${status}")
+          } else {
+            echo "✅ Dev app is healthy with HTTP ${status}"
+          }
+        }
+      }
+    }
+  }
+}
