@@ -57,7 +57,7 @@ pipeline {
           ).trim()
 
           if (status != '200') {
-            mail to: 'your_email@example.com',
+            mail to: 'kausalya.mkk@gmail.com',
                  subject: '❌ Dev App Down After Deployment',
                  body: """\
 The DEV application failed its health check after deployment.
