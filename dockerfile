@@ -1,17 +1,13 @@
-# Use official Nginx base image
-FROM nginx:alpine
+# Stage 1: Build
+FROM node:16-alpine as build
 
-# Set working directory
-WORKDIR /usr/share/nginx/html
-
-# Remove default nginx static files
-RUN rm -rf ./*
-
-# Copy your static site files into the Nginx web root
+WORKDIR /app
 COPY . .
+RUN npm install
+RUN npm run build
 
-# Expose port 80
+# Stage 2: Serve using nginx
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 80
-
-# Start Nginx server
 CMD ["nginx", "-g", "daemon off;"]
